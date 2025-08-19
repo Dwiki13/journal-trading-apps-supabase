@@ -86,7 +86,7 @@ app.post("/api/journal", upload.fields([
   const query =
     "INSERT INTO journal (modal, modalType, tanggal, pair, side, lot, hargaEntry, hargaTakeProfit, hargaStopLoss, analisaBefore, analisaAfter, reason, winLose, profit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
-  db.query(
+  pool.query(
     query,
     [
       modal,
@@ -117,7 +117,7 @@ app.post("/api/journal", upload.fields([
 
 // Endpoint ambil data journal
 app.get("/api/journal", (req, res) => {
-  db.query("SELECT * FROM journal ORDER BY tanggal ASC", (err, results) => {
+  pool.query("SELECT * FROM journal ORDER BY tanggal ASC", (err, results) => {
     if (err) {
       res.status(500).send("Error mengambil data");
     } else {
