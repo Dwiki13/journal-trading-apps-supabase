@@ -63,65 +63,43 @@ const upload = multer({ storage: storage });
 app.post("/api/journal", upload.fields([
   { name: 'analisaBefore', maxCount: 1 },
   { name: 'analisaAfter', maxCount: 1 }
-]), (req, res) => {
+]), async (req, res) => {
   const {
-    modal,
-    modalType,
-    tanggal,
-    pair,
-    side,
-    lot,
-    hargaEntry,
-    hargaTakeProfit,
-    hargaStopLoss,
-    reason,
-    winLose,
-    profit,
+    modal, modalType, tanggal, pair, side, lot,
+    hargaEntry, hargaTakeProfit, hargaStopLoss,
+    reason, winLose, profit
   } = req.body;
 
-   // Ambil nama file dari multer
   const analisaBefore = req.files?.analisaBefore?.[0]?.filename || null;
   const analisaAfter = req.files?.analisaAfter?.[0]?.filename || null;
 
-  const query =
-    "INSERT INTO journal (modal, modalType, tanggal, pair, side, lot, hargaEntry, hargaTakeProfit, hargaStopLoss, analisaBefore, analisaAfter, reason, winLose, profit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+  const query = `
+    INSERT INTO journal
+    (modal, modalType, tanggal, pair, side, lot, hargaEntry, hargaTakeProfit, hargaStopLoss,
+     analisaBefore, analisaAfter, reason, winLose, profit)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
 
-  pool.query(
-    query,
-    [
-      modal,
-      modalType,
-      tanggal,
-      pair,
-      side,
-      lot,
-      hargaEntry,
-      hargaTakeProfit,
-      hargaStopLoss,
-      analisaBefore,
-      analisaAfter,
-      reason,
-      winLose,
-      profit,
-    ],
-    (err, result) => {
-      if (err) {
-        console.error(err);
-        res.status(500).send("Error menyimpan data");
-      } else {
-        res.json({ message: "Data berhasil disimpan", id: result.insertId });
-      }
-    }
-  );
+  try {
+    const [result] = await pool.execute(query, [
+      modal, modalType, tanggal, pair, side, lot,
+      hargaEntry, hargaTakeProfit, hargaStopLoss,
+      analisaBefore, analisaAfter, reason, winLose, profit
+    ]);
+    res.json({ message: "Data berhasil disimpan", id: result.insertId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error menyimpan data");
+  }
 });
 
 // Endpoint ambil data journal
-app.get("/api/journal", (req, res) => {
-  pool.query("SELECT * FROM journal ORDER BY tanggal ASC", (err, results) => {
-    if (err) {
-      res.status(500).send("Error mengambil data");
-    } else {
-      res.json(results);
-    }
-  });
+app.get("/api/journal", async (req, res) => {
+  try {
+    const [results] = await pool.query("SELECT * FROM journal ORDER BY tanggal ASC");
+    res.json(results);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error mengambil data");
+  }
 });
