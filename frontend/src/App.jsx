@@ -43,10 +43,12 @@ function App() {
     profit: "",
   });
 
+  const API_URL = import.meta.env.VITE_API_URL;
+
     useEffect(() => {
     async function fetchJournal() {
       try {
-        const res = await axios.get("http://localhost:5000/api/journal");
+        const res = await axios.get(`${API_URL}/api/journal`);
         setJournal(res.data);
       } catch (err) {
         console.error("Gagal ambil data journal dari backend", err);
@@ -107,7 +109,7 @@ function handleModalTypeChange(e) {
   const [imgSrc, setImgSrc] = useState("");
 
   const handleOpen = (filename) => {
-    setImgSrc(`http://localhost:5000/uploads/${filename}`);
+    setImgSrc(`${API_URL}/uploads/${filename}`);
     setShow(true);
   };
 
@@ -124,13 +126,13 @@ function handleModalTypeChange(e) {
   }
 
   try {
-    const res = await fetch("http://localhost:5000/api/journal", {
+    const res = await fetch(`${API_URL}/api/journal`, {
       method: "POST",
       body: formData,
     });
     const data = await res.json();
     // Reload data journal terbaru dari backend
-    const newData = await axios.get("http://localhost:5000/api/journal");
+    const newData = await axios.get(`${API_URL}/api/journal`);
     setJournal(newData.data);
     console.log(data);
 
@@ -651,7 +653,7 @@ function handleModalTypeChange(e) {
               <td align="center">
                 {j.analisaBefore ? (
                   <Image
-                    src={`http://localhost:5000/uploads/${j.analisaBefore}`}
+                    src={`${API_URL}/uploads/${j.analisaBefore}`}
                     thumbnail
                     style={{ maxHeight: "80px", borderRadius: "6px" }}
                     onClick={() => handleOpen(j.analisaBefore)}
@@ -663,7 +665,7 @@ function handleModalTypeChange(e) {
               <td align="center">
                 {j.analisaAfter ? (
                   <Image
-                    src={`http://localhost:5000/uploads/${j.analisaAfter}`}
+                    src={`${API_URL}/uploads/${j.analisaAfter}`}
                     thumbnail
                     style={{ maxHeight: "80px", borderRadius: "6px" }}
                     onClick={() => handleOpen(j.analisaAfter)}
