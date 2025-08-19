@@ -16,15 +16,16 @@ app.use('/uploads', express.static('uploads'));
 // });
 
 const db = mysql.createPool({
-  host: "tramway.proxy.rlwy.net",   // host dari Railway
-  user: "root",                     // user dari Railway
-  password: "qlbJamqiFGCJghnwtJjXRnIRHZrPsJBC", // password dari Railway
-  database: "railway",              // nama database default di Railway
-  port: 35164,                      // port dari Railway
+  host: process.env.MYSQLHOST || "localhost",
+  user: process.env.MYSQLUSER || "root",
+  password: process.env.MYSQLPASSWORD || "",
+  database: process.env.MYSQLDATABASE || "trading_journal_db",
+  port: process.env.MYSQLPORT || 3306,
   ssl: {
-    rejectUnauthorized: false,       // Railway pakai SSL
+    rejectUnauthorized: true
   }
 });
+
 
 db.getConnection((err, conn) => {
   if (err) {
