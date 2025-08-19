@@ -1,41 +1,46 @@
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
+const dotenv = require("dotenv"); // <- jangan lupa ini
+
+// Load dotenv hanya di lokal
+if (!process.env.RAILWAY_ENVIRONMENT) {
+  dotenv.config({ path: ".env.local" });
+} else {
+  dotenv.config({ path: ".env.production" }); 
+}
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
+const isRailway = process.env.MYSQLHOST?.includes("railway.internal");
 
-// Config koneksi MySQL (ganti dengan config kamu)
-// const db = mysql.createPool({
-//   host: "localhost",
-//   user: "root",
-//   database: "trading_journal_db",
-// });
-
-const db = mysql.createPool({
-  host: process.env.MYSQLHOST || "localhost",
-  user: process.env.MYSQLUSER || "root",
-  password: process.env.MYSQLPASSWORD || "",
-  database: process.env.MYSQLDATABASE || "trading_journal_db",
-  port: process.env.MYSQLPORT || 3306,
-  ssl: {
-    rejectUnauthorized: true
-  }
+// Buat koneksi pool MySQL
+const pool = mysql.createPool({
+  host: process.env.MYSQLHOST,
+  user: process.env.MYSQLUSER,
+  password: process.env.MYSQLPASSWORD,
+  database: process.env.MYSQLDATABASE,
+  port: process.env.MYSQLPORT,
+  ...(isRailway ? {} : { ssl: { rejectUnauthorized: false } }) // SSL hanya kalau pakai public host
 });
 
-
-db.getConnection((err, conn) => {
-  if (err) {
-    console.error("❌ Gagal connect ke DB:", err);
-  } else {
-    console.log("✅ Berhasil connect ke DB Railway");
+// Tes koneksi
+(async () => {
+  try {
+    const conn = await pool.getConnection();
+    console.log("✅ Berhasil connect ke DB:", process.env.MYSQLHOST);
     conn.release();
+  } catch (err) {
+    console.error("❌ Gagal connect ke DB:", err);
   }
-});
+})();
 
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
 
 const multer = require("multer");
 
