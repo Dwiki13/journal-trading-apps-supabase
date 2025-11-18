@@ -117,13 +117,13 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // 2️⃣ GET DASHBOARD (logic equity & stats)
+    // 2️⃣ GET DASHBOARD (logic equity & stats) - enhanced
     // ============================================================
     if (path.endsWith("/dashboard")) {
       const { data: journals, error } = await supabase
         .from("journal")
         .select(
-          "modal, side, tanggal, harga_entry, harga_take_profit, harga_stop_loss, lot, win_lose, profit"
+          "modal, side, tanggal, harga_entry, harga_take_profit, harga_stop_loss, lot, win_lose, profit, pair"
         )
         .eq("user_id", user.id);
 
@@ -141,8 +141,18 @@ serve(async (req) => {
                 total_pnl: 0,
                 avg_rr: 0,
                 win_rate: 0,
+                total_trades: 0,
+                avg_profit_per_trade: 0,
+                avg_loss_per_trade: 0,
+                profit_factor: 0,
+                largest_win: 0,
+                largest_loss: 0,
+                most_traded_pair: null,
+                consecutive_wins: 0,
+                consecutive_losses: 0,
                 daily: [],
                 weekly: [],
+                profit_per_pair: [],
               },
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
@@ -150,18 +160,16 @@ serve(async (req) => {
         );
       }
 
-      // === Total Profit (PnL) ===
+      // === Total Profit (PnL) & Equity Logic ===
       const totalProfit = journals.reduce(
         (sum, j) => sum + (Number(j.profit) || 0),
         0
       );
 
-      // === Urutkan berdasarkan tanggal ===
       const sortedJournals = [...journals].sort(
-        (a, b) => new Date(a.tanggal) - new Date(b.tanggal)
+        (a, b) => new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime()
       );
 
-      // === Temukan modal terakhir yang valid ===
       let lastModal = 0;
       for (let i = sortedJournals.length - 1; i >= 0; i--) {
         const m = Number(sortedJournals[i].modal);
@@ -171,24 +179,31 @@ serve(async (req) => {
         }
       }
 
-      // === Hitung equity dengan logika dinamis ===
       let equity = lastModal;
+      let peakEquity = lastModal;
+      let maxDrawdown = 0;
+
       sortedJournals.forEach((j) => {
         const modalNow = Number(j.modal);
         const profitNow = Number(j.profit);
 
-        // Jika user input modal baru → reset modal
         if (!isNaN(modalNow) && modalNow > 0) {
           equity = modalNow;
+          peakEquity = modalNow;
         }
 
-        // Tambah / kurang sesuai profit
-        if (!isNaN(profitNow)) {
-          equity += profitNow;
-        }
+        if (!isNaN(profitNow)) equity += profitNow;
+
+        if (equity > peakEquity) peakEquity = equity;
+
+        const dd = peakEquity - equity;
+        if (dd > maxDrawdown) maxDrawdown = dd;
       });
 
-      // === Average Risk Reward (RR) ===
+      const maxDrawdownPercent =
+        peakEquity > 0 ? (maxDrawdown / peakEquity) * 100 : 0;
+
+      // === Average RR ===
       const rrList = journals
         .filter(
           (j) =>
@@ -204,9 +219,8 @@ serve(async (req) => {
           const sl = Number(j.harga_stop_loss);
           const side = j.side.toUpperCase();
 
-          let reward = 0;
-          let risk = 0;
-
+          let reward = 0,
+            risk = 0;
           if (side === "BUY") {
             reward = tp - entry;
             risk = entry - sl;
@@ -214,25 +228,82 @@ serve(async (req) => {
             reward = entry - tp;
             risk = sl - entry;
           }
-
           reward = Math.abs(reward);
           risk = Math.abs(risk);
-
           return risk > 0 ? reward / risk : 0;
         })
         .filter((rr) => rr > 0);
-
       const avgRR =
         rrList.length > 0
           ? rrList.reduce((a, b) => a + b, 0) / rrList.length
           : 0;
 
-      // === Win Rate ===
+      // === Win Rate & Trade Stats ===
       const totalTrades = journals.length;
       const winTrades = journals.filter(
         (j) => j.win_lose?.toLowerCase() === "win"
-      ).length;
-      const winRate = totalTrades > 0 ? (winTrades / totalTrades) * 100 : 0;
+      );
+      const loseTrades = journals.filter(
+        (j) => j.win_lose?.toLowerCase() === "lose"
+      );
+      const winRate =
+        totalTrades > 0 ? (winTrades.length / totalTrades) * 100 : 0;
+      const avgProfitPerTrade =
+        winTrades.length > 0
+          ? winTrades.reduce((a, j) => a + Number(j.profit), 0) /
+            winTrades.length
+          : 0;
+      const avgLossPerTrade =
+        loseTrades.length > 0
+          ? loseTrades.reduce((a, j) => a + Number(j.profit), 0) /
+            loseTrades.length
+          : 0;
+
+      const profitFactor =
+        Math.abs(avgLossPerTrade) > 0
+          ? avgProfitPerTrade / Math.abs(avgLossPerTrade)
+          : 0;
+
+      const largestWin = winTrades.reduce(
+        (max, j) => Math.max(max, Number(j.profit)),
+        0
+      );
+      const largestLoss = loseTrades.reduce(
+        (min, j) => Math.min(min, Number(j.profit)),
+        0
+      );
+
+      // === Most Traded Pair ===
+      const pairCountMap = new Map<string, number>();
+      journals.forEach((j) => {
+        const p = j.pair || "UNKNOWN";
+        pairCountMap.set(p, (pairCountMap.get(p) || 0) + 1);
+      });
+      let mostTradedPair = null;
+      let maxCount = 0;
+      pairCountMap.forEach((count, pair) => {
+        if (count > maxCount) {
+          maxCount = count;
+          mostTradedPair = pair;
+        }
+      });
+
+      // === Consecutive Wins / Losses ===
+      let consecWins = 0,
+        consecLosses = 0,
+        tempWin = 0,
+        tempLoss = 0;
+      sortedJournals.forEach((j) => {
+        if (j.win_lose?.toLowerCase() === "win") {
+          tempWin++;
+          tempLoss = 0;
+        } else if (j.win_lose?.toLowerCase() === "lose") {
+          tempLoss++;
+          tempWin = 0;
+        }
+        if (tempWin > consecWins) consecWins = tempWin;
+        if (tempLoss > consecLosses) consecLosses = tempLoss;
+      });
 
       // === Daily Performance ===
       const dailyMap = new Map();
@@ -242,11 +313,13 @@ serve(async (req) => {
       });
       const daily = Array.from(dailyMap, ([date, pnl]) => ({ date, pnl }));
 
-      // === Weekly Performance (ISO Week) ===
-      function getISOWeek(date) {
+      // === Weekly Performance ===
+      function getISOWeek(date: Date) {
         const tempDate = new Date(date);
         tempDate.setHours(0, 0, 0, 0);
-        tempDate.setDate(tempDate.getDate() + 3 - ((tempDate.getDay() + 6) % 7));
+        tempDate.setDate(
+          tempDate.getDate() + 3 - ((tempDate.getDay() + 6) % 7)
+        );
         const week1 = new Date(tempDate.getFullYear(), 0, 4);
         return (
           tempDate.getFullYear() +
@@ -254,21 +327,35 @@ serve(async (req) => {
           String(
             1 +
               Math.round(
-                ((tempDate - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) /
+                ((tempDate.getTime() - week1.getTime()) / 86400000 -
+                  3 +
+                  ((week1.getDay() + 6) % 7)) /
                   7
               )
           ).padStart(2, "0")
         );
       }
-
       const weeklyMap = new Map();
       journals.forEach((j) => {
         const week = getISOWeek(new Date(j.tanggal));
-        weeklyMap.set(week, (weeklyMap.get(week) || 0) + (Number(j.profit) || 0));
+        weeklyMap.set(
+          week,
+          (weeklyMap.get(week) || 0) + (Number(j.profit) || 0)
+        );
       });
       const weekly = Array.from(weeklyMap, ([week, pnl]) => ({ week, pnl }));
 
-      // === Response ===
+      // === Profit per Pair ===
+      const pairMap = new Map<string, number>();
+      journals.forEach((j) => {
+        const pair = j.pair || "UNKNOWN";
+        pairMap.set(pair, (pairMap.get(pair) || 0) + (Number(j.profit) || 0));
+      });
+      const profit_per_pair = Array.from(pairMap, ([pair, profit]) => ({
+        pair,
+        profit,
+      }));
+
       return addCors(
         new Response(
           JSON.stringify({
@@ -280,8 +367,19 @@ serve(async (req) => {
               total_pnl: totalProfit,
               avg_rr: Number(avgRR.toFixed(2)),
               win_rate: Number(winRate.toFixed(2)),
+              max_drawdown_percent: Number(maxDrawdownPercent.toFixed(2)),
+              total_trades: totalTrades,
+              avg_profit_per_trade: Number(avgProfitPerTrade.toFixed(2)),
+              avg_loss_per_trade: Number(avgLossPerTrade.toFixed(2)),
+              profit_factor: Number(profitFactor.toFixed(2)),
+              largest_win: largestWin, // <-- pastikan ini
+              largest_loss: largestLoss, // <-- pastikan ini
+              most_traded_pair: mostTradedPair,
+              consecutive_wins: consecWins,
+              consecutive_losses: consecLosses,
               daily,
               weekly,
+              profit_per_pair,
             },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
