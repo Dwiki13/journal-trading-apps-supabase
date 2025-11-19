@@ -3,6 +3,18 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 serve(async (req) => {
+  // === CORS PRE-FLIGHT HANDLING ===
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      },
+    });
+  }
+
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -14,6 +26,7 @@ serve(async (req) => {
         JSON.stringify({ error: "Missing Authorization header" }),
         {
           status: 401,
+          headers: { "Access-Control-Allow-Origin": "*" },
         }
       );
     }
@@ -27,10 +40,11 @@ serve(async (req) => {
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
+        headers: { "Access-Control-Allow-Origin": "*" },
       });
     }
 
-    // --- Parse form data (karena ada file upload)
+    // === Parse form-data ===
     const formData = await req.formData();
 
     const modal = formData.get("modal");
@@ -43,16 +57,16 @@ serve(async (req) => {
     const harga_take_profit = formData.get("harga_take_profit");
     const harga_stop_loss = formData.get("harga_stop_loss");
     const reason = formData.get("reason");
-    const win_lose = formData.get("win_lose");
-    const profit = formData.get("profit");
+    const win_lose = formData.get("win_lose") ? formData.get("win_lose") : null;
+    const profit = formData.get("profit") ? formData.get("profit") : null;
 
-    // --- File upload
     const analisaBeforeFile = formData.get("analisaBefore") as File | null;
     const analisaAfterFile = formData.get("analisaAfter") as File | null;
 
     let analisaBeforeUrl: string | null = null;
     let analisaAfterUrl: string | null = null;
 
+    // === Upload Before File ===
     if (analisaBeforeFile) {
       const filePath = `before/${user.id}-${Date.now()}-${
         analisaBeforeFile.name
@@ -71,6 +85,7 @@ serve(async (req) => {
       analisaBeforeUrl = publicUrl.publicUrl;
     }
 
+    // === Upload After File ===
     if (analisaAfterFile) {
       const filePath = `after/${user.id}-${Date.now()}-${
         analisaAfterFile.name
@@ -89,7 +104,7 @@ serve(async (req) => {
       analisaAfterUrl = publicUrl.publicUrl;
     }
 
-    // --- Insert ke tabel journal
+    // === Insert Journal ===
     const { error } = await supabase.from("journal").insert([
       {
         user_id: user.id,
@@ -119,8 +134,11 @@ serve(async (req) => {
         message: "Journal added successfully",
       }),
       {
-        headers: { "Content-Type": "application/json" },
         status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
       }
     );
   } catch (err) {
@@ -133,8 +151,11 @@ serve(async (req) => {
         error: err.message,
       }),
       {
-        headers: { "Content-Type": "application/json" },
         status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
       }
     );
   }
