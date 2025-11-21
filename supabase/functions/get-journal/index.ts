@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // helper untuk menambahkan CORS headers
 const addCors = (res: Response) => {
   const headers = new Headers(res.headers);
-  headers.set("Access-Control-Allow-Origin", "*"); // ganti * dengan domain frontend kamu untuk lebih aman
+  headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   headers.set("Access-Control-Allow-Headers", "Authorization,Content-Type");
   return new Response(res.body, { ...res, headers, status: res.status });
@@ -12,12 +12,11 @@ const addCors = (res: Response) => {
 
 serve(async (req) => {
   try {
-    // Handle OPTIONS preflight
     if (req.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": "*", // ganti * sesuai domain frontend
+          "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
           "Access-Control-Allow-Headers": "Authorization,Content-Type",
         },
@@ -45,17 +44,23 @@ serve(async (req) => {
     const token = authHeader.replace("Bearer ", "");
     const url = new URL(req.url);
 
+    // pagination
     const page = Number(url.searchParams.get("page") || "1");
     const limit = Number(url.searchParams.get("limit") || "10");
+
+    // filters
     const pair = url.searchParams.get("pair");
-    const tanggal = url.searchParams.get("tanggal");
+    const winLose = url.searchParams.get("win_lose");
+    const side = url.searchParams.get("side");
+
+    // date range
     const dateFrom = url.searchParams.get("date_from");
     const dateTo = url.searchParams.get("date_to");
-    const winLose = url.searchParams.get("win_lose");
+
     const sortBy = url.searchParams.get("sort_by") || "tanggal";
     const sortOrder = url.searchParams.get("sort_order") === "asc";
 
-    // Verifikasi user
+    // Verify user
     const {
       data: { user },
       error: userError,
@@ -74,22 +79,32 @@ serve(async (req) => {
       );
     }
 
-    // Query jurnal
+    // Query journal
     let query = supabase
       .from("journal")
       .select("*", { count: "exact" })
       .eq("user_id", user.id);
 
+    // ========== FILTERS ==========
+    
+    // pair
     if (pair) query = query.ilike("pair", `%${pair}%`);
-    if (tanggal) query = query.eq("tanggal", tanggal);
+
+    // win/lose
     if (winLose) query = query.eq("win_lose", winLose);
 
+    // side
+    if (side) query = query.eq("side", side);
+
+    // date range
     if (dateFrom && dateTo) query = query.gte("tanggal", dateFrom).lte("tanggal", dateTo);
     else if (dateFrom) query = query.gte("tanggal", dateFrom);
     else if (dateTo) query = query.lte("tanggal", dateTo);
 
+    // sorting
     query = query.order(sortBy, { ascending: sortOrder });
 
+    // pagination
     const from = (page - 1) * limit;
     const to = from + limit - 1;
     query = query.range(from, to);
