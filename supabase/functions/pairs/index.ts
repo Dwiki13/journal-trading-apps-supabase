@@ -1,12 +1,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
-let cache: {
-  timestamp: number;
-  data: any;
-} | null = null;
-
+let cache: { timestamp: number; data: any } | null = null;
 const CACHE_DURATION = 300 * 1000; // 5 menit
-
 const REQUIRED_KEY = Deno.env.get("PROXY_SECRET") ?? "";
 
 function validateProxy(req: Request) {
@@ -28,11 +23,8 @@ async function getCryptoUSDT() {
 
 async function getRealXAUUSD() {
   try {
-    const res = await fetch(
-      "https://api.twelvedata.com/price?symbol=XAU/USD"
-    );
+    const res = await fetch("https://api.twelvedata.com/price?symbol=XAU/USD");
     const json = await res.json();
-
     if (json.status === "error") return ["XAUUSD"];
     return ["XAUUSD"];
   } catch {
@@ -41,6 +33,18 @@ async function getRealXAUUSD() {
 }
 
 serve(async (req) => {
+  // ======= HANDLE CORS PRE-FLIGHT =======
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-proxy-secret",
+      },
+    });
+  }
+
   try {
     if (!validateProxy(req)) {
       return new Response(
@@ -51,7 +55,12 @@ serve(async (req) => {
         }),
         {
           status: 401,
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, x-proxy-secret",
+          },
         }
       );
     }
@@ -62,29 +71,20 @@ serve(async (req) => {
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, x-proxy-secret",
         },
       });
     }
 
     const cryptoPairs = await getCryptoUSDT();
-
     const forexPairs = [
-      "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD",
-      "NZDUSD", "USDCAD", "EURJPY", "GBPJPY", "CHFJPY",
+      "EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD",
+      "NZDUSD","USDCAD","EURJPY","GBPJPY","CHFJPY",
     ];
-
     const realXAU = await getRealXAUUSD();
-
-    const commodityPairs = [
-      ...realXAU,
-      "XAGUSD",
-      "WTIUSD",
-      "BRENTUSD",
-    ];
-
-    let allPairs = Array.from(
-      new Set([...cryptoPairs, ...forexPairs, ...commodityPairs])
-    ).sort();
+    const commodityPairs = [...realXAU, "XAGUSD","WTIUSD","BRENTUSD"];
+    let allPairs = Array.from(new Set([...cryptoPairs, ...forexPairs, ...commodityPairs])).sort();
 
     const url = new URL(req.url);
     const type = url.searchParams.get("type");
@@ -95,9 +95,7 @@ serve(async (req) => {
     if (type === "commodity") allPairs = commodityPairs;
 
     if (search) {
-      allPairs = allPairs.filter((p) =>
-        p.toLowerCase().includes(search.toLowerCase())
-      );
+      allPairs = allPairs.filter((p) => p.toLowerCase().includes(search.toLowerCase()));
     }
 
     const responseData = {
@@ -108,15 +106,14 @@ serve(async (req) => {
       total: allPairs.length,
     };
 
-    cache = {
-      timestamp: now,
-      data: responseData,
-    };
+    cache = { timestamp: now, data: responseData };
 
     return new Response(JSON.stringify(responseData), {
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-proxy-secret",
       },
     });
 
@@ -133,6 +130,8 @@ serve(async (req) => {
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, x-proxy-secret",
         },
       }
     );
