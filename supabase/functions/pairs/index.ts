@@ -79,29 +79,53 @@ serve(async (req) => {
 
     const cryptoPairs = await getCryptoUSDT();
     const forexPairs = [
-      "EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD",
-      "NZDUSD","USDCAD","EURJPY","GBPJPY","CHFJPY",
+      "EURUSD",
+      "GBPUSD",
+      "USDJPY",
+      "USDCHF",
+      "AUDUSD",
+      "NZDUSD",
+      "USDCAD",
+      "EURJPY",
+      "GBPJPY",
+      "CHFJPY",
     ];
     const realXAU = await getRealXAUUSD();
-    const commodityPairs = [...realXAU, "XAGUSD","WTIUSD","BRENTUSD"];
-    let allPairs = Array.from(new Set([...cryptoPairs, ...forexPairs, ...commodityPairs])).sort();
+    const commodityPairs = [...realXAU, "XAGUSD", "WTIUSD", "BRENTUSD"];
+    let allPairs = Array.from(
+      new Set([...cryptoPairs, ...forexPairs, ...commodityPairs])
+    ).sort();
 
     const url = new URL(req.url);
-    const type = url.searchParams.get("type");
-    const search = url.searchParams.get("search");
+    let type = url.searchParams.get("type"); // optional
+    const search = url.searchParams.get("search") ?? ""; // default string kosong
 
+    // Filter berdasarkan type kalau dikirim
     if (type === "crypto") allPairs = cryptoPairs;
     if (type === "forex") allPairs = forexPairs;
     if (type === "commodity") allPairs = commodityPairs;
 
+    // Filter search jika ada
     if (search) {
-      allPairs = allPairs.filter((p) => p.toLowerCase().includes(search.toLowerCase()));
+      allPairs = allPairs.filter((p) =>
+        p.toLowerCase().includes(search.toLowerCase())
+      );
     }
 
+    // Tentukan type otomatis jika tidak dikirim
+    if (!type && allPairs.length > 0) {
+      const first = allPairs[0];
+      if (cryptoPairs.includes(first)) type = "crypto";
+      else if (forexPairs.includes(first)) type = "forex";
+      else if (commodityPairs.includes(first)) type = "commodity";
+    }
+
+    // Response
     const responseData = {
       status: true,
       status_code: 200,
       message: "Pairs fetched successfully",
+      type: type ?? null, // tambahkan field type
       data: allPairs,
       total: allPairs.length,
     };
@@ -116,7 +140,6 @@ serve(async (req) => {
         "Access-Control-Allow-Headers": "Content-Type, x-proxy-secret",
       },
     });
-
   } catch (err) {
     return new Response(
       JSON.stringify({
