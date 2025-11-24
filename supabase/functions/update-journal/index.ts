@@ -6,20 +6,31 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
-function extractStoragePath(publicUrl) {
+function extractStoragePath(publicUrl: string | null) {
   if (!publicUrl) return null;
   try {
     const url = new URL(publicUrl);
     const parts = url.pathname.split("/storage/v1/object/public/analisa/");
     const rawPath = parts[1] || null;
     if (!rawPath) return null;
-    return decodeURIComponent(rawPath); // 🔥 decode semua karakter yang di-encode
+    return decodeURIComponent(rawPath);
   } catch {
     return null;
   }
 }
 
 serve(async (req) => {
+  // --- Handle preflight CORS ---
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, PUT, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      },
+    });
+  }
+
   try {
     const contentType = req.headers.get("content-type") || "";
     if (!contentType.includes("multipart/form-data")) {
@@ -27,6 +38,7 @@ serve(async (req) => {
         JSON.stringify({ error: "Expected multipart/form-data" }),
         {
           status: 400,
+          headers: { "Access-Control-Allow-Origin": "*" },
         }
       );
     }
@@ -36,9 +48,10 @@ serve(async (req) => {
     const userId = formData.get("userId");
 
     if (!id) {
-      return new Response(JSON.stringify({ error: "Missing journal ID" }), {
-        status: 400,
-      });
+      return new Response(
+        JSON.stringify({ error: "Missing journal ID" }),
+        { status: 400, headers: { "Access-Control-Allow-Origin": "*" } }
+      );
     }
 
     const { data: oldData, error: getErr } = await supabase
@@ -49,9 +62,10 @@ serve(async (req) => {
       .single();
 
     if (getErr || !oldData) {
-      return new Response(JSON.stringify({ error: "Journal not found" }), {
-        status: 404,
-      });
+      return new Response(
+        JSON.stringify({ error: "Journal not found" }),
+        { status: 404, headers: { "Access-Control-Allow-Origin": "*" } }
+      );
     }
 
     const bucket = supabase.storage.from("analisa");
@@ -63,21 +77,11 @@ serve(async (req) => {
 
     // --- Upload Before ---
     if (analisaBefore instanceof File && analisaBefore.size > 0) {
-      // Hapus file lama jika ada
       const oldBeforePath = extractStoragePath(oldData.analisa_before);
-      if (oldBeforePath) {
-        console.log("🗑️ Deleting old before file:", oldBeforePath);
-        await bucket.remove([oldBeforePath]);
-      }
+      if (oldBeforePath) await bucket.remove([oldBeforePath]);
 
       const beforePath = `before/${userId}-${Date.now()}-${analisaBefore.name}`;
-      const { error: uploadErrBefore } = await bucket.upload(
-        beforePath,
-        analisaBefore,
-        {
-          upsert: true,
-        }
-      );
+      const { error: uploadErrBefore } = await bucket.upload(beforePath, analisaBefore, { upsert: true });
       if (uploadErrBefore) throw uploadErrBefore;
 
       const { data } = bucket.getPublicUrl(beforePath);
@@ -86,28 +90,17 @@ serve(async (req) => {
 
     // --- Upload After ---
     if (analisaAfter instanceof File && analisaAfter.size > 0) {
-      // Hapus file lama jika ada
       const oldAfterPath = extractStoragePath(oldData.analisa_after);
-      if (oldAfterPath) {
-        console.log("🗑️ Deleting old after file:", oldAfterPath);
-        await bucket.remove([oldAfterPath]);
-      }
+      if (oldAfterPath) await bucket.remove([oldAfterPath]);
 
       const afterPath = `after/${userId}-${Date.now()}-${analisaAfter.name}`;
-      const { error: uploadErrAfter } = await bucket.upload(
-        afterPath,
-        analisaAfter,
-        {
-          upsert: true,
-        }
-      );
+      const { error: uploadErrAfter } = await bucket.upload(afterPath, analisaAfter, { upsert: true });
       if (uploadErrAfter) throw uploadErrAfter;
 
       const { data } = bucket.getPublicUrl(afterPath);
       analisaAfterPath = data.publicUrl;
     }
 
-    // --- Build payload update ---
     const fields = [
       "modal",
       "modalType",
@@ -119,7 +112,7 @@ serve(async (req) => {
       "hargaTakeProfit",
       "hargaStopLoss",
       "reason",
-      "winLose",
+      "win_lose",
       "profit",
     ];
 
@@ -128,23 +121,12 @@ serve(async (req) => {
       const value = formData.get(field);
       if (value !== null && value !== "") {
         switch (field) {
-          case "modalType":
-            updateData.modal_type = value;
-            break;
-          case "hargaEntry":
-            updateData.harga_entry = value;
-            break;
-          case "hargaTakeProfit":
-            updateData.harga_take_profit = value;
-            break;
-          case "hargaStopLoss":
-            updateData.harga_stop_loss = value;
-            break;
-          case "winLose":
-            updateData.win_lose = value;
-            break;
-          default:
-            updateData[field] = value;
+          case "modalType": updateData.modal_type = value; break;
+          case "hargaEntry": updateData.harga_entry = value; break;
+          case "hargaTakeProfit": updateData.harga_take_profit = value; break;
+          case "hargaStopLoss": updateData.harga_stop_loss = value; break;
+          case "winLose": updateData.win_lose = value; break;
+          default: updateData[field] = value;
         }
       }
     }
@@ -167,10 +149,10 @@ serve(async (req) => {
         message: "Journal updated successfully",
         updatedFields: updateData,
       }),
-      { status: 200 }
+      { headers: { "Access-Control-Allow-Origin": "*" }, status: 200 }
     );
-  } catch (error) {
-    console.error("❌ Update error:", error);
+  } catch (err: any) {
+    console.error("❌ Update error:", err);
     return new Response(
       JSON.stringify({
         status: false,
@@ -178,10 +160,7 @@ serve(async (req) => {
         message: "Internal server error",
         error: err.message,
       }),
-      {
-        headers: { "Content-Type": "application/json" },
-        status: 500,
-      }
+      { headers: { "Access-Control-Allow-Origin": "*" }, status: 500 }
     );
   }
 });
