@@ -113,11 +113,12 @@ serve(async (req) => {
     }
 
     // Tentukan type otomatis jika tidak dikirim
-    if (!type && allPairs.length > 0) {
-      const first = allPairs[0];
-      if (cryptoPairs.includes(first)) type = "crypto";
-      else if (forexPairs.includes(first)) type = "forex";
-      else if (commodityPairs.includes(first)) type = "commodity";
+    if (!type) {
+      if (allPairs.every((p) => cryptoPairs.includes(p))) type = "crypto";
+      else if (allPairs.every((p) => forexPairs.includes(p))) type = "forex";
+      else if (allPairs.every((p) => commodityPairs.includes(p)))
+        type = "commodity";
+      else type = "all";
     }
 
     // Response
